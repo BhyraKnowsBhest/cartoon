@@ -1,0 +1,69 @@
+html<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Magical Toy Store</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f0fdf4; text-align: center; padding: 40px; }
+        .toy-box { background: white; border: 4px solid #22c55e; border-radius: 20px; padding: 30px; max-width: 400px; margin: 0 auto; box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
+        .buy-btn { background: #22c55e; color: white; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; border-radius: 10px; cursor: pointer; width: 100%; margin-top: 15px; }
+        .buy-btn:hover { background: #16a34a; }
+        input, select { width: -webkit-fill-available; padding: 12px; margin: 8px 0; border: 2px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div class="toy-box">
+        <h2 style="color:#166534; margin-top:0;">🧸 The Magic Teddy Bear</h2>
+        <p style="color:#475569;">This bear dances when you clap your hands!</p>
+        
+        <label><b>Choose Your Country Money:</b></label>
+        <select id="currencyChooser">
+            <option value="USD">🇺🇸 US Dollar ($25.00)</option>
+            <option value="EUR">🇪🇺 Euro (€)</option>
+            <option value="GBP">🇬🇧 British Pound (£)</option>
+            <option value="CAD">🇨🇦 Canadian Dollar ($)</option>
+        </select>
+
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:15px; border-radius:10px; margin-top:15px; text-align:left;">
+            <label><b>💳 Card Number:</b></label>
+            <input type="text" id="cardNumber" placeholder="4242 4242 4242 4242">
+        </div>
+
+        <button class="buy-btn" onclick="sendMoneyToPiggyBank()">Buy and Pay Now!</button>
+    </div>
+
+    <script>
+        // Set this to your live Render link later (e.g., https://onrender.com)
+        const BACKEND_URL = "http://127.0.0.1:8000";
+
+        async function sendMoneyToPiggyBank() {
+            const payload = {
+                item_name: "Magic Teddy Bear",
+                price_in_usd: 25.00,
+                user_currency: document.getElementById("currencyChooser").value,
+                card_number: document.getElementById("cardNumber").value
+            };
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/pay`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // This alert proves that the product is available and the payment cleared!
+                    alert("🎉 " + data.message + "\n\nTotal Paid: " + data.charged_amount + " " + data.currency_used);
+                } else {
+                    alert("❌ Error: " + data.detail);
+                }
+            } catch (err) {
+                alert("Oh no! Cannot connect to the bank. Make sure main.py is running!");
+            }
+        }
+    </script>
+</body>
+</html>
