@@ -1,0 +1,214 @@
+html<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bhyra Studio | Instant Cartoon Framework</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0f172a; margin: 0; padding: 25px; color: #f8fafc; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { margin: 0; font-size: 24px; color: #38bdf8; }
+        .studio-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; height: calc(100vh - 100px); }
+        .control-panel { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        .canvas-area { display: flex; flex-direction: column; gap: 15px; align-items: center; }
+        canvas { background: #fffbeb; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 100%; max-width: 800px; height: 450px; }
+        .btn { background: #38bdf8; color: #0f172a; border: none; padding: 10px 15px; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; }
+        .btn:hover { background: #7dd3fc; }
+        .btn-secondary { background: #475569; color: white; }
+        .episode-card { background: #334155; padding: 12px; border-radius: 6px; cursor: pointer; margin-bottom: 10px; border: 2px solid transparent; }
+        .episode-card.active { border-color: #38bdf8; background: #1e293b; }
+        input, select { padding: 10px; background: #334155; border: 1px solid #475569; border-radius: 6px; color: white; width: -webkit-fill-available; margin-bottom: 10px; }
+        .timeline-controls { display: flex; gap: 10px; width: 100%; max-width: 800px; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>BHYRA ANIMATION STUDIO</h1>
+        <div style="font-size: 14px; color: #94a3b8;">EPISODIC CARTOON AUTOMATION HUB</div>
+    </header>
+
+    <div class="studio-layout">
+        <div class="control-panel">
+            <h3>Your Cartoon Series</h3>
+            <div id="episodeListContainer">Loading your scripts...</div>
+            
+            <hr style="border-color:#334155; width:100%;">
+            
+            <h3>Choreograph New Scene</h3>
+            <form id="sceneForm" onsubmit="createNewSceneFrame(event)">
+                <input type="text" id="epTitle" placeholder="Episode Title" required>
+                <input type="text" id="epSeries" placeholder="Series Name" defaultValue="My Cartoon Series">
+                <input type="text" id="epDialogue" placeholder="Character Dialogue Text" required>
+                <div style="display:flex; gap:10px;">
+                    <div>
+                        <label style="font-size:12px;">Squash/Stretch Width</label>
+                        <input type="number" id="epScaleX" step="0.1" value="1.0" min="0.5" max="2.0">
+                    </div>
+                    <div>
+                        <label style="font-size:12px;">Squash/Stretch Height</label>
+                        <input type="number" id="epScaleY" step="0.1" value="1.0" min="0.5" max="2.0">
+                    </div>
+                </div>
+                <button type="submit" class="btn" style="width: 100%;">Append Action Frame</button>
+            </form>
+        </div>
+
+        <div class="canvas-area">
+            <canvas id="animationViewport" width="800" height="450"></canvas>
+            <div class="timeline-controls">
+                <button class="btn btn-secondary" onclick="stepTimeline(-1)">◀ Prev Frame</button>
+                <button class="btn" id="playBtn" onclick="togglePlaybackLoop()">▶ Play Cartoon Sequence</button>
+                <button class="btn btn-secondary" onclick="stepTimeline(1)">Next Frame ▶</button>
+            </div>
+            <div id="timelineIndicator" style="font-size: 14px; color: #94a3b8;">Frame: 0 / 0</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("animationViewport");
+        const ctx = canvas.getContext("2d");
+        
+        let localEpisodes = [];
+        let activeEpisodeIndex = 0;
+        let activeFrameIndex = 0;
+        let isPlaying = false;
+        let playbackInterval = null;
+        let currentSceneFramesPool = [];
+
+        // Connection link to your running Python FastAPI system engine
+        const BACKEND_URL = "http://127.0.0.1:8000";
+
+        async function initStudioPipeline() {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/episodes`);
+                const payload = await res.json();
+                localEpisodes = payload.data;
+                renderEpisodeSidebar();
+                loadEpisodeToStage(0);
+            } catch (err) {
+                console.error("Studio system connection error:", err);
+            }
+        }
+
+        function renderEpisodeSidebar() {
+            const container = document.getElementById("episodeListContainer");
+            container.innerHTML = "";
+            localEpisodes.forEach((ep, idx) => {
+                const card = document.createElement("div");
+                card.className = `episode-card ${idx === activeEpisodeIndex ? 'active' : ''}`;
+                card.onclick = () => loadEpisodeToStage(idx);
+                card.innerHTML = `<strong>${ep.title}</strong><br><small style="color:#94a3b8;">${ep.series} (${ep.frames.length} frames)</small>`;
+                container.appendChild(card);
+            });
+        }
+
+        function loadEpisodeToStage(index) {
+            if(!localEpisodes[index]) return;
+            activeEpisodeIndex = index;
+            activeFrameIndex = 0;
+            renderEpisodeSidebar();
+            renderActiveFrameState();
+        }
+
+        function renderActiveFrameState() {
+            const episode = localEpisodes[activeEpisodeIndex];
+            if(!episode || !episode.frames[activeFrameIndex]) return;
+            
+            const frame = episode.frames[activeFrameIndex];
+            
+            // 1. Render Background Canvas Clear
+            ctx.fillStyle = episode.background || "#fffbeb";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 2. Draw Floor Horizon Line (Traditional Composition Rule)
+            ctx.strokeStyle = "#cbd5e1";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0, 350);
+            ctx.lineTo(canvas.width, 350);
+            ctx.stroke();
+
+            // 3. Render Animated Avatar Character using mathematical Squash and Stretch Matrices
+            ctx.save();
+            // Translate origin to character coordinate pivot point
+            ctx.translate(frame.character_x, frame.character_y);
+            ctx.rotate((frame.rotation * Math.PI) / 180);
+            ctx.scale(frame.scale_x, frame.scale_y);
+
+            // Draw Character Head Circle Element
+            ctx.fillStyle = "#78350f"; // Rich primary tone color mapping
+            ctx.beginPath();
+            ctx.arc(0, -60, 40, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Animated Eye Elements (Blinks automatically via execution timers)
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.arc(-15, -65, 8, 0, Math.PI * 2);
+            ctx.arc(15, -65, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = "#000000";
+            ctx.beginPath();
+            ctx.arc(-15, -65, 4, 0, Math.PI * 2);
+            ctx.arc(15, -65, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Character Body Base Element
+            ctx.fillStyle = "#fde047"; // Golden pop accent color layer mapping
+            ctx.beginPath();
+            ctx.moveTo(-30, 0);
+            ctx.lineTo(-45, -20);
+            ctx.lineTo(45, -20);
+            ctx.lineTo(30, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+
+            // 4. Render Dialogue Subtitle Text Component
+            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+            ctx.fillRect(50, 370, canvas.width - 100, 60);
+            ctx.strokeStyle = "#38bdf8";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(50, 370, canvas.width - 100, 60);
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 16px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(frame.dialogue, canvas.width / 2, 405);
+
+            // Update Frame HUD Elements
+            document.getElementById("timelineIndicator").innerText = `Frame: ${activeFrameIndex + 1} / ${episode.frames.length}`;
+        }
+
+        function stepTimeline(direction) {
+            const episode = localEpisodes[activeEpisodeIndex];
+            if(!episode) return;
+            activeFrameIndex += direction;
+            if(activeFrameIndex >= episode.frames.length) activeFrameIndex = 0;
+            if(activeFrameIndex < 0) activeFrameIndex = episode.frames.length - 1;
+            renderActiveFrameState();
+        }
+
+        function togglePlaybackLoop() {
+            const playBtn = document.getElementById("playBtn");
+            if(isPlaying) {
+                clearInterval(playbackInterval);
+                playBtn.innerText = "▶ Play Cartoon Sequence";
+                playBtn.style.background = "#38bdf8";
+                isPlaying = false;
+            } else {
+                playBtn.innerText = "⏸ Pause Playback";
+                playBtn.style.background = "#f43f5e";
+                isPlaying = true;
+                playbackInterval = setInterval(() => {
+                    stepTimeline(1);
+                }, 800); // 800ms frame-to-frame storyboard layout translation speed
+            }
+        }
+
+        async function createNewSceneFrame(e) {
+            e.preventDefault();
+            
