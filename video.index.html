@@ -1,0 +1,148 @@
+html<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bhyra Studio | Talking Cartoon Creator</title>
+    <style>
+        body { font-family: sans-serif; background-color: #0f172a; margin: 0; padding: 25px; color: #f8fafc; text-align: center; }
+        header { border-bottom: 2px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
+        .main-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; text-align: left; }
+        .sidebar { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+        canvas { background: #fffbeb; border-radius: 8px; width: 100%; max-width: 750px; height: 420px; display: block; margin: 0 auto 15px auto; box-shadow: 0 10px 25px rgba(0,0,0,0.4); }
+        .btn { background: #38bdf8; color: #0f172a; border: none; padding: 12px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; display: inline-block; margin: 5px; font-size: 14px; }
+        .btn:hover { background: #7dd3fc; }
+        .btn-video { background: #10b981; color: white; width: 100%; margin-top: 15px; }
+        .btn-video:hover { background: #34d399; }
+        .episode-card { background: #334155; padding: 12px; border-radius: 6px; cursor: pointer; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 style="margin:0; color:#38bdf8;">BHYRA'S TALKING CARTOON STUDIO</h1>
+    </header>
+
+    <div class="main-layout">
+        <div class="sidebar">
+            <h3>Select Episode</h3>
+            <div id="epList"></div>
+            
+            <!-- New Video Trigger Box Button -->
+            <button class="btn btn-video" onclick="saveCartoonAsVideoFile()">🎬 Export Complete Video Clip</button>
+        </div>
+        
+        <div>
+            <canvas id="cartoonBox" width="750" height="420"></canvas>
+            <div style="text-align: center;">
+                <button class="btn" style="background:#475569; color:white;" onclick="moveFrame(-1)">◀ Back</button>
+                <button class="btn" id="playBtn" onclick="startShow()">▶ Play Show & Talk</button>
+                <button class="btn" style="background:#475569; color:white;" onclick="moveFrame(1)">Next ▶</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("cartoonBox");
+        const ctx = canvas.getContext("2d");
+        let episodes = [];
+        let curEp = 0;
+        let curFrame = 0;
+        let timer = null;
+
+        const BACKEND = "http://127.0.0.1:8000";
+
+        async function startStudio() {
+            const res = await fetch(`${BACKEND}/api/episodes`);
+            const payload = await res.json();
+            episodes = payload.data;
+            
+            document.getElementById("epList").innerHTML = `<div class="episode-card"><b>${episodes[0].title}</b><br><small>${episodes[0].series}</small></div>`;
+            drawFrame();
+        }
+
+        function drawFrame() {
+            const ep = episodes[curEp];
+            const frame = ep.frames[curFrame];
+            
+            // Draw background and horizon ground floor line
+            ctx.fillStyle = ep.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#cbd5e1";
+            ctx.fillRect(0, 320, canvas.width, 8);
+
+            // Draw squash and stretch round character body avatar shape
+            ctx.save();
+            ctx.translate(frame.character_x, frame.character_y);
+            ctx.rotate((frame.rotation * Math.PI) / 180);
+            ctx.scale(frame.scale_x, frame.scale_y);
+
+            // Draw Head shape
+            ctx.fillStyle = "#78350f";
+            ctx.beginPath(); ctx.arc(0, -50, 35, 0, Math.PI*2); ctx.fill();
+
+            // Draw Eyes shapes
+            ctx.fillStyle = "white";
+            ctx.beginPath(); ctx.arc(-12, -55, 7, 0, Math.PI*2); ctx.arc(12, -55, 7, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "black";
+            ctx.beginPath(); ctx.arc(-12, -55, 3, 0, Math.PI*2); ctx.arc(12, -55, 3, 0, Math.PI*2); ctx.fill();
+
+            // Draw Feet dress accent layer
+            ctx.fillStyle = "#fde047";
+            ctx.fillRect(-25, -15, 50, 15);
+            ctx.restore();
+
+            // Subtitle text block display
+            ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+            ctx.fillRect(40, 340, canvas.width - 80, 60);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 16px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(frame.dialogue, canvas.width / 2, 375);
+        }
+
+        async function makeCharacterVoiceTalk(textLine) {
+            // Trigger backend browser synthesizer to play a cute robo-voice
+            const res = await fetch(`${BACKEND}/api/speak?text=${encodeURIComponent(textLine)}`);
+            if(res.ok) {
+                // Play standard free hardware browser text speech alert safely out loud
+                const speech = new SpeechSynthesisUtterance(textLine);
+                speech.pitch = 1.8; // High pitch to make it sound like a funny little cartoon character!
+                speech.rate = 1.1;
+                window.speechSynthesis.speak(speech);
+            }
+        }
+
+        function moveFrame(step) {
+            curFrame += step;
+            if(curFrame >= episodes[curEp].frames.length) curFrame = 0;
+            if(curFrame < 0) curFrame = episodes[curEp].frames.length - 1;
+            drawFrame();
+            makeCharacterVoiceTalk(episodes[curEp].frames[curFrame].dialogue);
+        }
+
+        function startShow() {
+            if(timer) {
+                clearInterval(timer); timer = null;
+                document.getElementById("playBtn").innerText = "▶ Play Show & Talk";
+            } else {
+                document.getElementById("playBtn").innerText = "⏸ Pause Show";
+                // Advance frames automatically every 2 seconds
+                timer = setInterval(() => { moveFrame(1); }, 2000);
+            }
+        }
+
+        async function saveCartoonAsVideoFile() {
+            const ep = episodes[curEp];
+            const res = await fetch(`${BACKEND}/api/video/export`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(ep.frames)
+            });
+            const data = await res.json();
+            alert("✨ Awesome! " + data.download_url + " The cartoon shapes timeline configuration code records have been recorded successfully onto your server drive!");
+        }
+
+        startStudio();
+    </script>
+</body>
+</html>
